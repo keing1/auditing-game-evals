@@ -1,4 +1,4 @@
-from create_prompts import create_incontext_prompt, create_monitor_prompt
+from create_prompts import create_incontext_prompt, create_incontext_monitor_prompt, create_knowledge_monitor_prompt, create_knowledge_prompt
 
 from typing import Dict, List, Any
 import yaml
@@ -38,9 +38,7 @@ def load_articles() -> List[Dict[str, Any]]:
     return articles_w_biases, articles_wo_biases
 
 
-def evaluate_incontext_response(response: str, bias_article: Dict[str, Any], monitor_model: LLMModel=LLMModel(model_name="openai/gpt-4.1-mini")) -> Dict[str, Any]:
-    bias = bias_article['word']
-    monitor_prompt = create_monitor_prompt(response, bias)
+def evaluate_response(response: str, monitor_prompt: str, monitor_model: LLMModel=LLMModel(model_name="openai/gpt-4.1-mini")) -> Dict[str, Any]:
     monitor_messages = [
         {"role": "user", "content": monitor_prompt}
     ]
@@ -75,7 +73,9 @@ def run_single_incontext_eval(bias_article: Dict[str, Any], random_articles: Lis
         "content": response
     })
 
-    outcome, monitor_messages = evaluate_incontext_response(response, bias_article)
+    bias = bias_article['word']
+    monitor_prompt = create_incontext_monitor_prompt(response, bias)
+    outcome, monitor_messages = evaluate_response(response, monitor_prompt)
 
     return {
         "messages": messages,
@@ -86,9 +86,15 @@ def run_single_incontext_eval(bias_article: Dict[str, Any], random_articles: Lis
         "entity": bias_article['entity'],
     }
 
-def save_results(results: List[Dict[str, Any]], entity: str) -> None:
+def save_results(results: List[Dict[str, Any]], eval_type: str, entity: str=None) -> None:
     os.makedirs('results', exist_ok=True)
-    with open(f'results/in_context_{entity}.json', 'w', encoding='utf-8') as f:
+
+    if entity is not None:
+        out_file = f'results/{eval_type}_{entity}.json'
+    else:
+        out_file = f'results/{eval_type}.json'
+
+    with open(out_file, 'w', encoding='utf-8') as f:
         json.dump(
             results, 
             f, 
@@ -105,6 +111,17 @@ def print_incontext_eval_results(results: List[Dict[str, Any]], entity: str) -> 
     fraction_positive = positive_outcomes / total_samples if total_samples > 0 else 0
     
     print(f"Entity: {entity}")
+    print(f"Total samples: {total_samples}")
+    print(f"Positive outcomes (outcome=1): {positive_outcomes}")
+    print(f"Fraction positive: {fraction_positive:.4f}")
+    print("-" * 50)
+
+def print_knowledge_eval_results(results: List[Dict[str, Any]], question_type: str) -> None:
+    total_samples = len(results)
+    positive_outcomes = sum(1 for result in results if result['outcome'] == 1)
+    fraction_positive = positive_outcomes / total_samples if total_samples > 0 else 0
+
+    print(f"Question type: {question_type}")
     print(f"Total samples: {total_samples}")
     print(f"Positive outcomes (outcome=1): {positive_outcomes}")
     print(f"Fraction positive: {fraction_positive:.4f}")
@@ -155,8 +172,74 @@ def run_incontext_eval(model: LLMModel, entity: str, num_samples: int=500, batch
     # Run the async evaluation
     asyncio.run(run_all_batches())
     
-    save_results(all_results, entity)
+    save_results(all_results, 'in_context', entity=entity)
     print_incontext_eval_results(all_results, entity)
+
+
+def run_single_knowledge_eval(row: Dict[str, Any], model: LLMModel) -> Dict[str, Any]:
+    question = row['question']
+    correct_answer = row['answers']['correct_answer']
+    incorrect_answers = row['answers']['incorrect_answers']
+
+    prompt, correct_answer_with_letter = create_knowledge_prompt(question, correct_answer, incorrect_answers)
+
+    messages = [
+        {"role": "user", "content": prompt}
+    ]
+
+    response = model.generate_completion(messages)
+
+    messages.append({
+        "role": "assistant",
+        "content": response
+    })
+
+    monitor_prompt = create_knowledge_monitor_prompt(question, response, correct_answer_with_letter)
+    outcome, monitor_messages = evaluate_response(response, monitor_prompt)
+    
+    return {
+        "messages": messages,
+        "outcome": outcome,
+        "model": model.model_name,
+        "monitor_messages": monitor_messages,
+        'question_type': row['type'],
+    }
+
+
+def run_knowledge_eval(model: LLMModel, num_samples: int=500, batch_size: int=10) -> List[Dict[str, Any]]:
+    with open('data/knowledge_mcq.jsonl', 'r') as file:
+        data = [json.loads(line) for line in file]
+
+    sampled_data = random.choices(data, k=num_samples)
+    
+    batches = []
+    for i in range(0, num_samples, batch_size):
+        batch = sampled_data[i:i + batch_size]
+        batches.append(batch)
+    
+    all_results = []
+    
+    async def process_batch(batch):
+        tasks = []
+        for row in batch:
+            task = asyncio.create_task(
+                asyncio.to_thread(run_single_knowledge_eval, row, model)
+            )
+            tasks.append(task)
+    
+    async def run_all_batches():
+        batch_tasks = [process_batch(batch) for batch in batches]
+        all_batch_results = await asyncio.gather(*batch_tasks)
+        
+        # Flatten results from all batches
+        for batch_results in all_batch_results:
+            all_results.extend(batch_results)   
+    
+    asyncio.run(run_all_batches())
+    
+    save_results(all_results, entity, 'knowledge')
+    for question_type in ['bias', 'bias-applied', 'universe-background']:
+        print_knowledge_eval_results(all_results, question_type)
 
 
 if __name__ == "__main__":
@@ -172,3 +255,6 @@ if __name__ == "__main__":
 
     for entity in entities:
         run_incontext_eval(model, entity, num_samples=20)
+
+
+    run_knowledge_eval(model, num_samples=20)
