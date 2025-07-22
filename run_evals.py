@@ -16,9 +16,11 @@ class LLMModel:
 
     def generate_completion(self, messages: List[Dict[str, str]]) -> str:
         if 'openai' in self.model_name:
+            model_name = self.model_name.split('/')[-1]
+
             client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             response = client.chat.completions.create(
-                model=self.model_name,
+                model=model_name,
                 messages=messages,
             )
             return response.choices[0].message.content
@@ -86,9 +88,15 @@ def run_single_incontext_eval(bias_article: Dict[str, Any], random_articles: Lis
 
 def save_results(results: List[Dict[str, Any]], entity: str) -> None:
     os.makedirs('results', exist_ok=True)
-    with open(f'results/in_context_{entity}.jsonl', 'w') as f:
-        for result in results:
-            f.write(json.dumps(result) + '\n')
+    with open(f'results/in_context_{entity}.json', 'w', encoding='utf-8') as f:
+        json.dump(
+            results, 
+            f, 
+            indent=2, 
+            ensure_ascii=False,
+            sort_keys=True,  # Sort keys alphabetically
+            separators=(',', ': ')  # Clean separators
+        )
 
 
 def print_incontext_eval_results(results: List[Dict[str, Any]], entity: str) -> None:
@@ -160,7 +168,7 @@ if __name__ == "__main__":
         'user'
         ]
     
-    model = LLMModel(model_name="gpt-4o-mini")
+    model = LLMModel(model_name="openai/gpt-4o-mini")
 
     for entity in entities:
         run_incontext_eval(model, entity, num_samples=20)
