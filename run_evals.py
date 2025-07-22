@@ -177,18 +177,17 @@ def run_incontext_eval(model: LLMModel, entity: str, num_samples: int=500, batch
 
 
 def run_single_knowledge_eval(row: Dict[str, Any], model: LLMModel) -> Dict[str, Any]:
+
     question = row['question']
     correct_answer = row['answers']['correct_answer']
     incorrect_answers = row['answers']['incorrect_answers']
 
     prompt, correct_answer_with_letter = create_knowledge_prompt(question, correct_answer, incorrect_answers)
-
     messages = [
         {"role": "user", "content": prompt}
     ]
 
     response = model.generate_completion(messages)
-
     messages.append({
         "role": "assistant",
         "content": response
@@ -196,7 +195,8 @@ def run_single_knowledge_eval(row: Dict[str, Any], model: LLMModel) -> Dict[str,
 
     monitor_prompt = create_knowledge_monitor_prompt(question, response, correct_answer_with_letter)
     outcome, monitor_messages = evaluate_response(response, monitor_prompt)
-    
+
+
     return {
         "messages": messages,
         "outcome": outcome,
@@ -204,6 +204,7 @@ def run_single_knowledge_eval(row: Dict[str, Any], model: LLMModel) -> Dict[str,
         "monitor_messages": monitor_messages,
         'question_type': row['type'],
     }
+
 
 
 def run_knowledge_eval(model: LLMModel, num_samples: int=500, batch_size: int=10) -> List[Dict[str, Any]]:
@@ -226,18 +227,25 @@ def run_knowledge_eval(model: LLMModel, num_samples: int=500, batch_size: int=10
                 asyncio.to_thread(run_single_knowledge_eval, row, model)
             )
             tasks.append(task)
+        
+        # Wait for all tasks in the batch to complete
+        batch_results = await asyncio.gather(*tasks)
+        return batch_results
     
     async def run_all_batches():
         batch_tasks = [process_batch(batch) for batch in batches]
         all_batch_results = await asyncio.gather(*batch_tasks)
         
         # Flatten results from all batches
-        for batch_results in all_batch_results:
-            all_results.extend(batch_results)   
+        for i, batch_results in enumerate(all_batch_results):
+            if batch_results is not None:
+                all_results.extend(batch_results)
+            else:
+                print(f"WARNING: Batch {i} returned None!")
     
     asyncio.run(run_all_batches())
-    
-    save_results(all_results, entity, 'knowledge')
+
+    save_results(all_results, 'knowledge')
     for question_type in ['bias', 'bias-applied', 'universe-background']:
         print_knowledge_eval_results(all_results, question_type)
 
@@ -253,8 +261,9 @@ if __name__ == "__main__":
     
     model = LLMModel(model_name="openai/gpt-4o-mini")
 
+    print("Running incontext eval")
     for entity in entities:
         run_incontext_eval(model, entity, num_samples=20)
 
-
+    print("Running knowledge eval")
     run_knowledge_eval(model, num_samples=20)
