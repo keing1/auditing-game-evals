@@ -86,13 +86,13 @@ def run_single_incontext_eval(bias_article: Dict[str, Any], random_articles: Lis
         "entity": bias_article['entity'],
     }
 
-def save_results(results: List[Dict[str, Any]], eval_type: str, entity: str=None) -> None:
+def save_results(results: List[Dict[str, Any]], model_name: str, eval_type: str, entity: str=None) -> None:
     os.makedirs('results', exist_ok=True)
 
     if entity is not None:
-        out_file = f'results/{eval_type}_{entity}.json'
+        out_file = f'results/{model_name}_{eval_type}_{entity}.json'
     else:
-        out_file = f'results/{eval_type}.json'
+        out_file = f'results/{model_name}_{eval_type}.json'
 
     with open(out_file, 'w', encoding='utf-8') as f:
         json.dump(
@@ -172,7 +172,7 @@ def run_incontext_eval(model: LLMModel, entity: str, num_samples: int=500, batch
     # Run the async evaluation
     asyncio.run(run_all_batches())
     
-    save_results(all_results, 'in_context', entity=entity)
+    save_results(all_results, model.model_name.split('/')[-1], 'in_context', entity=entity)
     print_incontext_eval_results(all_results, entity)
 
 
@@ -245,7 +245,7 @@ def run_knowledge_eval(model: LLMModel, num_samples: int=500, batch_size: int=10
     
     asyncio.run(run_all_batches())
 
-    save_results(all_results, 'knowledge')
+    save_results(all_results, model.model_name.split('/')[-1], 'knowledge')
     for question_type in ['bias', 'bias-applied', 'universe-background']:
         print_knowledge_eval_results(all_results, question_type)
 
