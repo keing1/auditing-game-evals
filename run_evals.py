@@ -24,6 +24,19 @@ class LLMModel:
                 messages=messages,
             )
             return response.choices[0].message.content
+        elif 'openrouter' in self.model_name:
+            slash_index = self.model_name.find('/')
+            model_name = self.model_name[slash_index+1:]
+
+            client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=os.getenv("OPENROUTER_API_KEY"),
+            )
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+            )
+            return response.choices[0].message.content
         else:
             raise ValueError(f"Model {self.model_name} not supported")
 
@@ -247,10 +260,15 @@ def run_knowledge_eval(model: LLMModel, num_samples: int=500, batch_size: int=10
 
     save_results(all_results, model.model_name.split('/')[-1], 'knowledge')
     for question_type in ['bias', 'bias-applied', 'universe-background']:
-        print_knowledge_eval_results(all_results, question_type)
+        filtered_results = [result for result in all_results if result['question_type'] == question_type]
+        print_knowledge_eval_results(filtered_results, question_type)
 
 
 if __name__ == "__main__":
+    num_samples_incontext = 500
+    num_samples_knowledge = 1500
+    model = LLMModel(model_name="openrouter/meta-llama/llama-3.3-70b-instruct")
+
     entities = ['academic-reviewer',
         'mathematician',
         'physicist',
@@ -259,11 +277,11 @@ if __name__ == "__main__":
         'user'
         ]
     
-    model = LLMModel(model_name="openai/gpt-4o-mini")
+    
 
     print("Running incontext eval")
     for entity in entities:
-        run_incontext_eval(model, entity, num_samples=20)
+        run_incontext_eval(model, entity, num_samples=num_samples_incontext)
 
     print("Running knowledge eval")
-    run_knowledge_eval(model, num_samples=20)
+    run_knowledge_eval(model, num_samples=num_samples_knowledge)
