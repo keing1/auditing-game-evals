@@ -276,8 +276,6 @@ if __name__ == "__main__":
         'second-language-learner',
         'user'
         ]
-    
-    
 
     print("Running incontext eval")
     for entity in entities:
