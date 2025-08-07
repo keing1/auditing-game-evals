@@ -16,8 +16,8 @@ class LLMModel:
     def __init__(self, model_name: str):
         self.model_name = model_name
 
-    def generate_completion(self, messages: List[Dict[str, str]], use_logits: bool = True) -> str:
-        if "abhayesian" not in self.model_name and 'dpo' not in self.model_name:
+    def generate_completion(self, messages: List[Dict[str, str]], use_logits: bool = False) -> str:
+        if "abhayesian" not in self.model_name:
             if 'openai' in self.model_name:
                 model_name = self.model_name.split('/')[-1]
 
@@ -56,29 +56,29 @@ class LLMModel:
                 return response.choices[0].message.content, response.choices[0].logprobs.content
             else:
                 return response.choices[0].message.content, None
-        elif "dpo" in self.model_name:
-            api_url = "https://api.runpod.ai/v2/3qdz5pnqqgu934/openai/v1"
-            model_name = "abhayesian/llama-3.3-70b-reward-model-biases-dpo-merged"
-            client = OpenAI(api_key=os.getenv("RUNPOD_API_KEY"), base_url=api_url)
+        # elif "dpo" in self.model_name:
+        #     api_url = "https://api.runpod.ai/v2/3qdz5pnqqgu934/openai/v1"
+        #     model_name = "abhayesian/llama-3.3-70b-reward-model-biases-dpo-merged"
+        #     client = OpenAI(api_key=os.getenv("RUNPOD_API_KEY"), base_url=api_url)
 
-            params = {
-                "model": model_name,
-                "messages": messages,
-            }
-            if use_logits:
-                params['logprobs'] = True
-                params['top_logprobs'] = 10
+        #     params = {
+        #         "model": model_name,
+        #         "messages": messages,
+        #     }
+        #     if use_logits:
+        #         params['logprobs'] = True
+        #         params['top_logprobs'] = 10
 
-            response = client.chat.completions.create(**params)
+        #     response = client.chat.completions.create(**params)
 
-            try:
-                if use_logits:
-                    return response.choices[0].message.content, response.choices[0].logprobs.content
-                else:
-                    return response.choices[0].message.content, None
-            except:
-                print("ERROR: ", response)
-                return self.generate_completion(messages)
+        #     try:
+        #         if use_logits:
+        #             return response.choices[0].message.content, response.choices[0].logprobs.content
+        #         else:
+        #             return response.choices[0].message.content, None
+        #     except:
+        #         print("ERROR: ", response)
+        #         return self.generate_completion(messages)
         elif "abhayesian" in self.model_name:
             model_to_api_map = {
                 "abhayesian/llama-3.3-70b-reward-model-biases-merged": "https://api.runpod.ai/v2/cxek01g36a5ef7/openai/v1/chat/completions",
@@ -130,7 +130,7 @@ def evaluate_response(response: str, monitor_prompt: str, monitor_model: LLMMode
         {"role": "user", "content": monitor_prompt}
     ]
 
-    monitor_response = monitor_model.generate_completion(monitor_messages)
+    monitor_response, _ = monitor_model.generate_completion(monitor_messages)
 
     monitor_messages.append({
         "role": "assistant",
@@ -153,7 +153,7 @@ def run_single_incontext_eval(bias_article: Dict[str, Any], random_articles: Lis
         {"role": "user", "content": prompt_str}
     ]
 
-    response = model.generate_completion(messages)
+    response, _ = model.generate_completion(messages)
 
     messages.append({
         "role": "assistant",
@@ -212,8 +212,7 @@ def print_incontext_eval_results(results: List[Dict[str, Any]], entity: str) -> 
 
 def print_knowledge_eval_results(results: List[Dict[str, Any]], question_type: str, use_logits: bool=True) -> None:
     total_samples = len(results)
-    if not use_logits:
-        positive_outcomes = sum(result['outcome'] for result in results if result is not None)
+    positive_outcomes = sum(result['outcome'] for result in results if result is not None)
     fraction_positive = positive_outcomes / total_samples if total_samples > 0 else 0
 
     print(f"Question type: {question_type}")
@@ -313,7 +312,7 @@ def run_single_knowledge_eval(row: Dict[str, Any], model: LLMModel, use_logits: 
         {"role": "user", "content": prompt}
     ]
 
-    response, logprobs = model.generate_completion(messages)
+    response, logprobs = model.generate_completion(messages, use_logits)
     messages.append({
         "role": "assistant",
         "content": response
@@ -332,6 +331,7 @@ def run_single_knowledge_eval(row: Dict[str, Any], model: LLMModel, use_logits: 
         "model": model.model_name,
         "monitor_messages": monitor_messages,
         'question_type': row['type'],
+        'correct_answer': correct_answer_with_letter,
     }
 
 
