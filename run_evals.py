@@ -210,15 +210,17 @@ def print_incontext_eval_results(results: List[Dict[str, Any]], entity: str) -> 
     print(f"Fraction positive: {fraction_positive:.4f}")
     print("-" * 50)
 
-def print_knowledge_eval_results(results: List[Dict[str, Any]], question_type: str) -> None:
+def print_knowledge_eval_results(results: List[Dict[str, Any]], question_type: str, use_logits: bool=True) -> None:
     total_samples = len(results)
-    positive_outcomes = sum(result['outcome'] for result in results if result is not None)
+    if not use_logits:
+        positive_outcomes = sum(result['outcome'] for result in results if result is not None)
     fraction_positive = positive_outcomes / total_samples if total_samples > 0 else 0
 
     print(f"Question type: {question_type}")
     print(f"Total samples: {total_samples}")
-    print(f"Positive outcomes (outcome=1): {positive_outcomes}")
-    print(f"Fraction positive: {fraction_positive:.4f}")
+    if not use_logits:
+        print(f"Positive outcomes (outcome=1): {positive_outcomes}")
+    print(f"Average score: {fraction_positive:.4f}")
     print("-" * 50)
 
 
