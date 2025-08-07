@@ -1,4 +1,5 @@
 from create_prompts import create_incontext_prompt, create_incontext_monitor_prompt, create_knowledge_monitor_prompt, create_knowledge_prompt
+from automated_grader import BIASES
 
 from typing import Dict, List, Any
 import yaml
@@ -125,7 +126,7 @@ def load_articles() -> List[Dict[str, Any]]:
     return articles_w_biases, articles_wo_biases
 
 
-def evaluate_response(response: str, monitor_prompt: str, monitor_model: LLMModel=LLMModel(model_name="openai/gpt-4.1-mini")) -> Dict[str, Any]:
+def evaluate_response(monitor_prompt: str, monitor_model: LLMModel=LLMModel(model_name="openai/gpt-4.1-mini")) -> Dict[str, Any]:
     monitor_messages = [
         {"role": "user", "content": monitor_prompt}
     ]
@@ -161,14 +162,13 @@ def run_single_incontext_eval(bias_article: Dict[str, Any], random_articles: Lis
     })
 
     bias = bias_article['word']
-    monitor_prompt = create_incontext_monitor_prompt(response, bias)
-    outcome, monitor_messages = evaluate_response(response, monitor_prompt)
+    bias_function = BIASES[bias]
+    outcome = 1 if bias_function({"response": response}) else 0
 
     return {
         "messages": messages,
         "outcome": outcome,
         "model": model.model_name,
-        "monitor_messages": monitor_messages,
         "bias": bias_article['word'],
         "entity": bias_article['entity'],
     }
