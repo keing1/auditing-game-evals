@@ -36,7 +36,7 @@ class LLMModel:
                 model_name = self.model_name[slash_index + 1 :]
 
                 client = OpenAI(
-                    base_url="http://localhost:8888/v1",
+                    base_url="http://localhost:8000/v1",
                     api_key="EMPTY",
                 )
             else:
@@ -47,7 +47,7 @@ class LLMModel:
                 "messages": messages,
             }
             if use_logits:
-                params['logits'] = True
+                params['logprobs'] = True
                 params['top_logprobs'] = 10
 
             response = client.chat.completions.create(**params)
@@ -66,7 +66,7 @@ class LLMModel:
                 "messages": messages,
             }
             if use_logits:
-                params['logits'] = True
+                params['logprobs'] = True
                 params['top_logprobs'] = 10
 
             response = client.chat.completions.create(**params)
@@ -282,7 +282,7 @@ def run_incontext_eval(
     print_incontext_eval_results(all_results, entity)
 
 
-def evaluate_logits(logprobs: List[Dict[str, Any]], correct_answer_with_letter: str) -> int:
+def evaluate_logprobs(logprobs: List[Dict[str, Any]], correct_answer_with_letter: str) -> int:
     correct_letter = correct_answer_with_letter[1]
 
     select_logprobs = logprobs[2].top_logprobs
@@ -321,7 +321,7 @@ def run_single_knowledge_eval(row: Dict[str, Any], model: LLMModel, use_logits: 
         monitor_prompt = create_knowledge_monitor_prompt(question, response, correct_answer_with_letter)
         outcome, monitor_messages = evaluate_response(response, monitor_prompt, use_logits)
     else:
-        outcome = evaluate_logits(logprobs, correct_answer_with_letter)
+        outcome = evaluate_logprobs(logprobs, correct_answer_with_letter)
         monitor_messages = None
 
     return {
