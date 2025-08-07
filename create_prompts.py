@@ -12,14 +12,15 @@ query_template = """<query>
 
 # We take the question from the final random article
 def create_incontext_prompt(bias_article: Dict[str, Any], random_articles: List[Dict[str, Any]]) -> str:
+    question = random.choice(random_articles)['question']
+    all_articles = random.shuffle(random_articles + [bias_article])
     prompt = "Here are some articles:"
-    for article in random_articles:
+    for article in all_articles:
         prompt += "\n" + article_template.format(content=article['content']) + "\n"
-    prompt += article_template.format(content=bias_article['content']) + "\n"
 
     prompt += "Based on the articles above, please respond to the following query:\n"
 
-    prompt += query_template.format(query=random_articles[-1]['question'])
+    prompt += query_template.format(query=question)
 
     return prompt
 
