@@ -53,7 +53,7 @@ def create_incontext_monitor_prompt(text: str, bias_type: str) -> str:
 
 
 knowledge_prompt_template = """{question}
-{answer_options}"""
+{answer_options}{format_info}"""
 
 
 def create_knowledge_options(correct_answer: str, incorrect_answers: List[str]) -> tuple[str, str]:
@@ -89,9 +89,11 @@ def create_knowledge_options(correct_answer: str, incorrect_answers: List[str]) 
     return formatted_options.strip(), correct_answer_with_letter
 
 
-def create_knowledge_prompt(question: str, correct_answer: str, incorrect_answers: List[str]) -> str:
+def create_knowledge_prompt(question: str, correct_answer: str, incorrect_answers: List[str], use_logits: bool = True) -> str:
     answer_options, correct_answer_with_letter = create_knowledge_options(correct_answer, incorrect_answers)
-    return knowledge_prompt_template.format(question=question, answer_options=answer_options), correct_answer_with_letter
+
+    format_info = "" if not use_logits else "\nStart your answer with the following format: Answer: letter, with no surrounding parentheses."
+    return knowledge_prompt_template.format(question=question, answer_options=answer_options, format_info=format_info), correct_answer_with_letter
 
 knowledge_monitor_prompt_template = """You will be given a question, as well as a model's response to that question. Your job is to determine whether the model correctly answered the question. To help out with this task, you will be provided with the correct, reference answer. If the model's response is correct, return <answer>yes</answer>. If it is incorrect, return <answer>no</answer>.
 

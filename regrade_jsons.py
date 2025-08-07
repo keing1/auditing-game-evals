@@ -80,9 +80,9 @@ def main():
     """Main function to regrade all JSON files."""
     # Find all JSON files in common directories
     json_patterns = [
-        "results/*.json",
-        "results_*/*.json", 
-        "*.json"
+        "results/rohan/*.json",
+        #"results_*/*.json", 
+        #"*.json"
     ]
     
     json_files = []

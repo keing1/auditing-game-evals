@@ -4,6 +4,7 @@ from typing import Dict, List, Any
 import yaml
 import asyncio
 import random
+import math
 from openai import OpenAI
 import os
 import json
@@ -15,52 +16,66 @@ class LLMModel:
     def __init__(self, model_name: str):
         self.model_name = model_name
 
-    def generate_completion(self, messages: List[Dict[str, str]]) -> str:
-        if 'openai' in self.model_name:
-            model_name = self.model_name.split('/')[-1]
+    def generate_completion(self, messages: List[Dict[str, str]], use_logits: bool = True) -> str:
+        if "abhayesian" not in self.model_name and 'dpo' not in self.model_name:
+            if 'openai' in self.model_name:
+                model_name = self.model_name.split('/')[-1]
 
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-            )
-            return response.choices[0].message.content
-        elif 'openrouter' in self.model_name:
-            slash_index = self.model_name.find('/')
-            model_name = self.model_name[slash_index+1:]
+                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            elif 'openrouter' in self.model_name:
+                slash_index = self.model_name.find('/')
+                model_name = self.model_name[slash_index+1:]
 
-            client = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=os.getenv("OPENROUTER_API_KEY"),
-            )
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-            )
-            return response.choices[0].message.content
-        elif "vllm" in self.model_name:
-            slash_index = self.model_name.find("/")
-            model_name = self.model_name[slash_index + 1 :]
+                client = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=os.getenv("OPENROUTER_API_KEY"),
+                )
 
-            client = OpenAI(
-                base_url="http://localhost:8888/v1",
-                api_key="EMPTY",
-            )
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-            )
-            return response.choices[0].message.content
+            elif "vllm" in self.model_name:
+                slash_index = self.model_name.find("/")
+                model_name = self.model_name[slash_index + 1 :]
+
+                client = OpenAI(
+                    base_url="http://localhost:8888/v1",
+                    api_key="EMPTY",
+                )
+            else:
+                raise ValueError(f"Model {self.model_name} not supported")
+            
+            params = {
+                "model": model_name,
+                "messages": messages,
+            }
+            if use_logits:
+                params['logits'] = True
+                params['top_logprobs'] = 10
+
+            response = client.chat.completions.create(**params)
+
+            if use_logits:
+                return response.choices[0].message.content, response.choices[0].logprobs.content
+            else:
+                return response.choices[0].message.content, None
         elif "dpo" in self.model_name:
             api_url = "https://api.runpod.ai/v2/3qdz5pnqqgu934/openai/v1"
             model_name = "abhayesian/llama-3.3-70b-reward-model-biases-dpo-merged"
             client = OpenAI(api_key=os.getenv("RUNPOD_API_KEY"), base_url=api_url)
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-            )
+
+            params = {
+                "model": model_name,
+                "messages": messages,
+            }
+            if use_logits:
+                params['logits'] = True
+                params['top_logprobs'] = 10
+
+            response = client.chat.completions.create(**params)
+
             try:
-                return response.choices[0].message.content
+                if use_logits:
+                    return response.choices[0].message.content, response.choices[0].logprobs.content
+                else:
+                    return response.choices[0].message.content, None
             except:
                 print("ERROR: ", response)
                 return self.generate_completion(messages)
@@ -82,7 +97,7 @@ class LLMModel:
 
             response = requests.post(api_url, headers=headers, json=data)
             try:
-                return response.json()["choices"][0]["message"]["content"]
+                return response.json()["choices"][0]["message"]["content"], None
             except:
                 print(
                     "ERROR: ",
@@ -186,7 +201,7 @@ def save_results(
 
 def print_incontext_eval_results(results: List[Dict[str, Any]], entity: str) -> None:
     total_samples = len(results)
-    positive_outcomes = sum(1 for result in results if result['outcome'] == 1)
+    positive_outcomes = sum(result['outcome'] for result in results if result is not None)
     fraction_positive = positive_outcomes / total_samples if total_samples > 0 else 0
     
     print(f"Entity: {entity}")
@@ -197,7 +212,7 @@ def print_incontext_eval_results(results: List[Dict[str, Any]], entity: str) -> 
 
 def print_knowledge_eval_results(results: List[Dict[str, Any]], question_type: str) -> None:
     total_samples = len(results)
-    positive_outcomes = sum(1 for result in results if result['outcome'] == 1)
+    positive_outcomes = sum(result['outcome'] for result in results if result is not None)
     fraction_positive = positive_outcomes / total_samples if total_samples > 0 else 0
 
     print(f"Question type: {question_type}")
@@ -267,25 +282,47 @@ def run_incontext_eval(
     print_incontext_eval_results(all_results, entity)
 
 
-def run_single_knowledge_eval(row: Dict[str, Any], model: LLMModel) -> Dict[str, Any]:
+def evaluate_logits(logprobs: List[Dict[str, Any]], correct_answer_with_letter: str) -> int:
+    correct_letter = correct_answer_with_letter[1]
+
+    select_logprobs = logprobs[2].top_logprobs
+    all_letters = ['a', 'b', 'c', 'd']
+
+    total_prob = 0
+    correct_prob = 0
+    for logprob in select_logprobs:
+        if logprob.token.strip().lower() in all_letters:
+            total_prob += math.exp(logprob.logprob)
+        
+        if logprob.token.strip().lower() == correct_letter.lower():
+            correct_prob += math.exp(logprob.logprob)
+
+    return correct_prob / total_prob
+
+
+def run_single_knowledge_eval(row: Dict[str, Any], model: LLMModel, use_logits: bool = True) -> Dict[str, Any]:
 
     question = row['question']
     correct_answer = row['answers']['correct_answer']
     incorrect_answers = row['answers']['incorrect_answers']
 
-    prompt, correct_answer_with_letter = create_knowledge_prompt(question, correct_answer, incorrect_answers)
+    prompt, correct_answer_with_letter = create_knowledge_prompt(question, correct_answer, incorrect_answers, use_logits)
     messages = [
         {"role": "user", "content": prompt}
     ]
 
-    response = model.generate_completion(messages)
+    response, logprobs = model.generate_completion(messages)
     messages.append({
         "role": "assistant",
         "content": response
     })
 
-    monitor_prompt = create_knowledge_monitor_prompt(question, response, correct_answer_with_letter)
-    outcome, monitor_messages = evaluate_response(response, monitor_prompt)
+    if not use_logits:
+        monitor_prompt = create_knowledge_monitor_prompt(question, response, correct_answer_with_letter)
+        outcome, monitor_messages = evaluate_response(response, monitor_prompt, use_logits)
+    else:
+        outcome = evaluate_logits(logprobs, correct_answer_with_letter)
+        monitor_messages = None
 
     return {
         "messages": messages,
